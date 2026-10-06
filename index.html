@@ -189,13 +189,12 @@ td.num,th.num{text-align:right;white-space:nowrap}
       <label class="label" for="notes">Session notes</label>
       <input id="notes" type="text" placeholder="Sleep, energy, anything that felt off">
     </div>
-    <p class="notice ok small" id="savedNote" hidden>Saved to your log today. Your numbers stay here until tomorrow, and any changes you make update the same entry when you tap Update.</p>
     <div class="actions">
-      <button class="btn" id="saveBtn">Save workout</button>
-      <button class="btn ghost" id="clearBtn">Clear entries</button>
+      <span class="small" id="saveState" role="status" style="flex:1 1 200px">Entries save automatically as you type.</span>
+      <button class="btn ghost" id="clearBtn" style="padding:8px 14px;font-size:16px">Clear this day</button>
       <span class="unit-toggle" role="group" aria-label="Weight unit"><button id="u-lb" aria-pressed="true">lb</button><button id="u-kg" aria-pressed="false">kg</button></span>
     </div>
-    <p class="small muted">Ticking a set starts its rest timer. Entries are kept while you type; Save adds the workout to your log on this phone. Weights and reps prefill from your last session of this day.</p>
+    <p class="small muted">Ticking a set starts its rest timer. Each week keeps its own entries; use the arrows at the top to look back at earlier weeks. Grey numbers in the weight boxes are what you lifted the week before, and they fill in once you log reps for that set.</p>
   </section>
 
   <section id="tab-week" class="wrap" hidden>
@@ -322,33 +321,31 @@ function mondayOf(d){const x=new Date(d);const wd=(x.getDay()+6)%7;x.setDate(x.g
 // ---------- State ----------
 let db=null, sessions=[], settings=null, dbReady=false;
 let unit=LS.get("il.unit","lb");
-let weekOverride=null;
+let viewIdx=null;      // week being viewed, as a 0-based index across blocks; null = the current calendar week
 let day=null;
-let draft=LS.get("il.draft",{});   // {UA:{bench:[{w,r,rir,done}]}, notes, saved:{UA:{date,id}}, _ts}
-// In-progress entries: written to this device on every keystroke and mirrored to the log store,
-// so they survive closing the app even where browser storage is cleared.
-let draftTimer=null,draftWriting=false,draftDirty=false;
-function saveDraft(){draft._ts=Date.now();LS.set("il.draft",draft);draftDirty=true;clearTimeout(draftTimer);draftTimer=setTimeout(flushDraft,600)}
-async function flushDraft(){clearTimeout(draftTimer);if(!db||!draftDirty)return;
-  if(draftWriting){draftTimer=setTimeout(flushDraft,400);return}
-  draftWriting=true;draftDirty=false;
-  try{await db.doc("drafts/current").set({json:JSON.stringify(draft),ts:draft._ts||Date.now()})}catch(e){draftDirty=true}
-  finally{draftWriting=false}}
-document.addEventListener("visibilitychange",()=>{if(document.visibilityState==="hidden")flushDraft()});
-window.addEventListener("pagehide",()=>flushDraft());
 let tab=LS.get("il.tab","today");
 
-function blockWeek(){
-  if(weekOverride) return weekOverride;
-  if(!settings||!settings.blockStart) return {wk:1,block:1};
+const idxBW=i=>({wk:(i%8)+1,block:Math.floor(i/8)+1});
+const bwIdx=(b,w)=>(b-1)*8+(w-1);
+function currentIdx(){
+  if(!settings||!settings.blockStart) return 0;
   const days=Math.floor((mondayOf(new Date())-mondayOf(parseISO(settings.blockStart)))/864e5);
-  const w=Math.max(0,Math.floor(days/7));
-  return {wk:(w%8)+1,block:Math.floor(w/8)+1};
+  return Math.max(0,Math.floor(days/7));
 }
+function shownIdx(){return viewIdx==null?currentIdx():viewIdx}
+function blockWeek(){return idxBW(shownIdx())}
 function lifts(){return sessions.filter(s=>s.kind==="lift")}
-function lastFor(dayKey){return lifts().find(s=>s.day===dayKey)}
-function lastExercise(id){const today=isoDate(new Date());for(const s of lifts()){if(s.date===today)continue;if(s.sets&&s.sets[id]&&s.sets[id].length)return {s,sets:s.sets[id]}}return null}
-function nextDay(){const l=lifts()[0];if(!l)return "UA";return ORDER[(ORDER.indexOf(l.day)+1)%4]}
+function hasEntries(s){return !!s&&Object.values(s.sets||{}).some(a=>a.some(x=>x.r!=null&&x.r!==""||x.w!=null&&x.w!==""))}
+function findSession(block,wk,d){return lifts().filter(s=>s.block===block&&s.week===wk&&s.day===d).sort((a,b)=>(b.ts||0)-(a.ts||0))[0]||null}
+function sessIdx(s){return s.block&&s.week?bwIdx(s.block,s.week):-1}
+// most recent entry for an exercise from an EARLIER week than the one shown
+function lastExercise(id){
+  const vi=shownIdx();
+  const cands=lifts().filter(s=>sessIdx(s)<vi&&s.sets&&s.sets[id]&&s.sets[id].some(x=>x.r!=null&&x.r!==""));
+  cands.sort((a,b)=>sessIdx(b)-sessIdx(a)||(b.ts||0)-(a.ts||0));
+  const s=cands[0];return s?{s,sets:s.sets[id].filter(x=>x.r!=null&&x.r!=="")}:null;
+}
+function nextDay(){const b=idxBW(currentIdx());return ORDER.find(k=>!hasEntries(findSession(b.block,b.wk,k)))||"UA"}
 
 // ---------- Status ----------
 let statusTimer;
@@ -360,14 +357,8 @@ function showTab(t){tab=t;LS.set("il.tab",t);document.querySelectorAll(".tabs bu
   ["today","week","progress","plan","guide"].forEach(k=>$("#tab-"+k).hidden=k!==t);
   if(t==="week")renderWeek(); if(t==="progress")renderProgress();}
 document.querySelectorAll(".tabs button").forEach(b=>b.addEventListener("click",()=>showTab(b.dataset.tab)));
-async function shiftWeek(delta){
-  const b=blockWeek(); let w=(b.block-1)*8+(b.wk-1)+delta; if(w<0)w=0;
-  if(db){const start=mondayOf(new Date());start.setDate(start.getDate()-w*7);
-    try{await db.doc("settings/main").set(Object.assign({},settings||{},{blockStart:isoDate(start)}));}catch(e){status("Couldn't save the week change. Storage on this phone may be full or blocked.","err")}}
-  else{weekOverride={wk:(w%8)+1,block:Math.floor(w/8)+1};renderAll()}
-}
-$("#wkPrev").addEventListener("click",()=>shiftWeek(-1));
-$("#wkNext").addEventListener("click",()=>shiftWeek(1));
+$("#wkPrev").addEventListener("click",()=>goWeek(shownIdx()-1));
+$("#wkNext").addEventListener("click",()=>goWeek(shownIdx()+1));
 
 // ---------- Stick figures (start / end positions) ----------
 const FL={torso:34,ua:18,fa:17,th:22,sh:21,foot:7};
@@ -467,52 +458,67 @@ function figPair(ex){
 
 // ---------- Train tab ----------
 function renderPhase(){
-  const b=blockWeek(),p=PHASES[b.wk];
-  const start=settings&&settings.blockStart?"":' <button class="linkbtn" id="startBlock">Start week 1 today</button>';
-  $("#phase").innerHTML=`<strong>Week ${b.wk}: ${esc(p.t)}</strong>${p.deload?'<span class="chip deload">Deload</span>':""}<span class="muted small">${esc(p.d)}</span>${start}`;
-  const sb=$("#startBlock"); if(sb)sb.addEventListener("click",()=>{weekOverride=null;shiftWeek(0)});
+  const b=blockWeek(),p=PHASES[b.wk],ci=currentIdx(),vi=shownIdx();
+  let extra="";
+  if(!settings||!settings.blockStart) extra=' <button class="linkbtn" id="startBlock">Start week 1 today</button>';
+  else if(vi!==ci) extra=`<span class="chip">${vi<ci?"Past week":"Future week"}</span> <button class="linkbtn" id="toCurrent">Back to this week</button> <button class="linkbtn" id="makeCurrent">Make this the current week</button>`;
+  $("#phase").innerHTML=`<strong>Week ${b.wk}: ${esc(p.t)}</strong>${p.deload?'<span class="chip deload">Deload</span>':""}<span class="muted small">${esc(p.d)}</span>${extra}`;
+  const sb=$("#startBlock"); if(sb)sb.addEventListener("click",()=>setCalendar(shownIdx()));
+  const tc=$("#toCurrent"); if(tc)tc.addEventListener("click",()=>goWeek(null));
+  const mc=$("#makeCurrent"); if(mc)mc.addEventListener("click",()=>setCalendar(shownIdx()));
 }
+async function setCalendar(idx){
+  if(!db){status("Storage is blocked in this browser. Turn off Private Browsing in Safari.","err");return}
+  const start=mondayOf(new Date());start.setDate(start.getDate()-idx*7);
+  try{viewIdx=null;await db.doc("settings/main").set(Object.assign({},settings||{},{blockStart:isoDate(start)}))}
+  catch(e){status("Couldn't change the current week. Try again in a moment.","err")}
+}
+function goWeek(idx){flushWrite();viewIdx=(idx==null||idx===currentIdx())?null:Math.max(0,idx);openView();renderAll()}
 function renderDayPick(){
-  const nd=nextDay();
-  $("#daypick").innerHTML=ORDER.map(k=>{const d=DAYS[k],l=lastFor(k);
-    return `<button data-day="${k}" aria-pressed="${k===day}"><span class="dn"><span class="plate p-${d.plate}"></span>${d.name}</span><span class="ds">${l?"Last: "+fmtDate(l.date):d.sub}</span>${k===nd?'<span class="next">Up next</span>':'<span class="next" style="visibility:hidden">·</span>'}</button>`}).join("");
-  document.querySelectorAll("#daypick button").forEach(b=>b.addEventListener("click",()=>{day=b.dataset.day;LS.set("il.day",day);draft.day=day;saveDraft();renderDayPick();renderExercises()}));
+  const b=blockWeek(),isCur=shownIdx()===currentIdx(),nd=isCur?nextDay():null;
+  $("#daypick").innerHTML=ORDER.map(k=>{const d=DAYS[k],s=findSession(b.block,b.wk,k),done=hasEntries(s);
+    return `<button data-day="${k}" aria-pressed="${k===day}"><span class="dn"><span class="plate p-${d.plate}"></span>${d.name}</span><span class="ds">${done?"Logged "+fmtDate(s.date):"Not logged yet"}</span>${k===nd?'<span class="next">Up next</span>':done?'<span class="next" style="color:var(--good)">Week '+b.wk+' ✓</span>':'<span class="next" style="visibility:hidden">·</span>'}</button>`}).join("");
+  document.querySelectorAll("#daypick button").forEach(btn=>btn.addEventListener("click",()=>{flushWrite();day=btn.dataset.day;LS.set("il.day",day);renderDayPick();openView()}));
 }
-function getDraftSets(ex,count){
-  draft[day]=draft[day]||{}; let arr=draft[day][ex.id];
-  if(!arr){const prev=lastExercise(ex.id);arr=[];
-    for(let i=0;i<count;i++){const p=prev&&prev.sets[Math.min(i,prev.sets.length-1)];arr.push({w:p&&p.w!=null&&p.w!==""?String(p.w):"",r:"",rir:"",done:false})}
-    draft[day][ex.id]=arr}
-  while(arr.length<count)arr.push({w:arr.length?arr[arr.length-1].w:"",r:"",rir:"",done:false});
+
+// The open week+day. Everything typed autosaves into this week's entry for the day.
+let cur=null, loadedJSON="";
+const str=v=>v==null?"":String(v);
+function openView(){
+  const b=blockWeek(), s=findSession(b.block,b.wk,day);
+  cur={block:b.block,wk:b.wk,day,id:s?s.id:`b${b.block}w${b.wk}-${day}`,exists:!!s,date:s&&s.date,ts:s&&s.ts,notes:s&&s.notes||"",sets:{}};
+  for(const [id,arr] of Object.entries((s&&s.sets)||{}))cur.sets[id]=arr.map(x=>({w:str(x.w),r:str(x.r),rir:str(x.rir),done:!!x.done}));
+  loadedJSON=s?JSON.stringify(s):"";
+  renderExercises();
+}
+function rowsFor(ex,count){
+  let arr=cur.sets[ex.id];
+  if(!arr)arr=cur.sets[ex.id]=[];
+  while(arr.length<count)arr.push({w:"",r:"",rir:"",done:false});
   return arr;
 }
+function suggestW(ex,i){const prev=lastExercise(ex.id);if(!prev||ex.bw)return "";const p=prev.sets[Math.min(i,prev.sets.length-1)];return p&&p.w!=null&&p.w!==""?String(p.w):""}
 function hintFor(ex){
   const prev=lastExercise(ex.id); if(!prev)return {cls:"",txt:`First time logging this. Pick a weight you can lift for ${ex.lo} reps with the target reps in reserve.`};
-  const sets=prev.sets.filter(s=>s.r!==""&&s.r!=null);
-  if(!sets.length)return {cls:"",txt:"No reps recorded last time."};
+  const sets=prev.sets;
   const allTop=sets.every(s=>Number(s.r)>=ex.hi);
-  const u=prev.s.unit||"lb";
+  const u=prev.s.unit||"lb", wkTxt=prev.s.week?`week ${prev.s.week}`:"last time";
   const line=sets.map(s=>(s.w!==""&&s.w!=null?s.w+"×":"")+s.r).join(", ");
   if(allTop&&!ex.bw){const inc=u==="kg"?(ex.up?"1–2.5 kg":"2.5–5 kg"):(ex.up?"2.5–5 lb":"5–10 lb");
-    return {cls:"up",txt:`You hit ${ex.hi}+ on every set last time (${line}). Add ${inc} and aim for ${ex.lo}+ reps.`}}
-  return {cls:"",txt:`Last time: ${line} ${u}. Beat it by a rep or two at the same weight.`};
+    return {cls:"up",txt:`You hit ${ex.hi}+ on every set in ${wkTxt} (${line}). Add ${inc} and aim for ${ex.lo}+ reps.`}}
+  return {cls:"",txt:`In ${wkTxt}: ${line} ${u}. Beat it by a rep or two at the same weight.`};
 }
 function renderExercises(){
-  const wk=blockWeek().wk, d=DAYS[day], today=isoDate(new Date());
-  const sv=draft.saved&&draft.saved[day];
-  if(sv&&sv.date!==today){delete draft[day];if(draft.notes)delete draft.notes[day];delete draft.saved[day];saveDraft()}
-  const savedToday=!!(draft.saved&&draft.saved[day]);
-  $("#saveBtn").textContent=savedToday?"Update workout":"Save workout";
-  $("#savedNote").hidden=!savedToday;
+  const wk=cur.wk, d=DAYS[day];
   $("#exlist").innerHTML=d.ex.map((ex,i)=>{
-    const t=target(ex,wk), n=t.sets+t.bonus, arr=getDraftSets(ex,n), h=hintFor(ex);
+    const t=target(ex,wk), n=t.sets+t.bonus, arr=rowsFor(ex,n), h=hintFor(ex);
     const repLabel=ex.secs?"Secs":"Reps";
-    const rows=arr.map((s,j)=>`<div class="setrow${j>=t.sets?" bonus":""}" data-ex="${ex.id}" data-i="${j}">
+    const rows=arr.map((s,j)=>{const sw=suggestW(ex,j);return `<div class="setrow${j>=t.sets?" bonus":""}" data-ex="${ex.id}" data-i="${j}">
       <span class="sn">${j+1}</span>
-      <input inputmode="decimal" aria-label="${esc(ex.n)} set ${j+1} weight" placeholder="${ex.bw?"BW":unit}" value="${esc(s.w)}" data-f="w">
+      <input inputmode="decimal" aria-label="${esc(ex.n)} set ${j+1} weight" placeholder="${esc(sw||(ex.bw?"BW":unit))}" value="${esc(s.w)}" data-f="w">
       <input inputmode="numeric" aria-label="${esc(ex.n)} set ${j+1} ${repLabel.toLowerCase()}" placeholder="${ex.lo}–${ex.hi}" value="${esc(s.r)}" data-f="r">
       <input inputmode="numeric" aria-label="${esc(ex.n)} set ${j+1} reps in reserve" placeholder="${esc(t.rir)}" value="${esc(s.rir)}" data-f="rir">
-      <button class="done" aria-pressed="${s.done}" aria-label="Mark set ${j+1} done and start rest" data-done>✓</button></div>`).join("");
+      <button class="done" aria-pressed="${s.done}" aria-label="Mark set ${j+1} done and start rest" data-done>✓</button></div>`}).join("");
     return `<article class="ex">
       <div class="ex-head"><div><h3>${i+1}. ${esc(ex.n)}</h3>${ex.alt?`<div class="small muted">${esc(ex.alt)}</div>`:""}
         <div class="ex-target"><span class="chip">${t.sets}${t.bonus?"+1":""} × ${ex.lo}–${ex.hi}${ex.secs?" s":""}</span><span class="chip">RIR ${esc(t.rir)}</span><span class="chip">Rest ${mmss(ex.rest)}</span></div></div></div>
@@ -521,49 +527,69 @@ function renderExercises(){
       <div class="sets"><div class="setrow headrow"><span>Set</span><span>Weight</span><span>${repLabel}</span><span>RIR</span><span></span></div>${rows}</div>
       <div class="ex-foot"><button class="linkbtn" data-add="${ex.id}">+ Add a set</button>${arr.length>n?`<button class="linkbtn" data-rm="${ex.id}">Remove last set</button>`:""}</div>
     </article>`}).join("");
-  $("#notes").value=(draft.notes&&draft.notes[day])||"";
+  $("#notes").value=cur.notes||"";
+  saveState(cur.exists?"saved":"idle");
 }
+// fill an empty weight with last week's number once the set is actually used
+function fillWeight(row,s){if(s.w!=="")return;const ex=exById(row.dataset.ex).ex,sw=suggestW(ex,+row.dataset.i);if(sw){s.w=sw;const inp=row.querySelector('[data-f="w"]');if(inp)inp.value=sw}}
 $("#exlist").addEventListener("input",e=>{
   const inp=e.target; const row=inp.closest(".setrow"); if(!row||!inp.dataset.f)return;
-  draft[day][row.dataset.ex][+row.dataset.i][inp.dataset.f]=inp.value.trim(); saveDraft();
+  const s=cur.sets[row.dataset.ex][+row.dataset.i]; s[inp.dataset.f]=inp.value.trim();
+  if(inp.dataset.f!=="w"&&s[inp.dataset.f]!=="")fillWeight(row,s);
+  scheduleWrite();
 });
 $("#exlist").addEventListener("click",e=>{
   const doneBtn=e.target.closest("[data-done]");
-  if(doneBtn){const row=doneBtn.closest(".setrow");const s=draft[day][row.dataset.ex][+row.dataset.i];s.done=!s.done;doneBtn.setAttribute("aria-pressed",String(s.done));saveDraft();
-    if(s.done){const ex=exById(row.dataset.ex).ex;startTimer(ex.rest,ex.n)}return}
-  const add=e.target.closest("[data-add]"); if(add){draft[day][add.dataset.add].push({w:"",r:"",rir:"",done:false});const a=draft[day][add.dataset.add];if(a.length>1)a[a.length-1].w=a[a.length-2].w;saveDraft();renderExercises();return}
-  const rm=e.target.closest("[data-rm]"); if(rm){draft[day][rm.dataset.rm].pop();saveDraft();renderExercises()}
+  if(doneBtn){const row=doneBtn.closest(".setrow");const s=cur.sets[row.dataset.ex][+row.dataset.i];s.done=!s.done;doneBtn.setAttribute("aria-pressed",String(s.done));
+    if(s.done){fillWeight(row,s);const ex=exById(row.dataset.ex).ex;startTimer(ex.rest,ex.n)}scheduleWrite();return}
+  const add=e.target.closest("[data-add]"); if(add){const a=cur.sets[add.dataset.add];a.push({w:a.length?a[a.length-1].w:"",r:"",rir:"",done:false});scheduleWrite();renderExercises();return}
+  const rm=e.target.closest("[data-rm]"); if(rm){cur.sets[rm.dataset.rm].pop();scheduleWrite();renderExercises()}
 });
-$("#notes").addEventListener("input",e=>{draft.notes=draft.notes||{};draft.notes[day]=e.target.value;saveDraft()});
+$("#notes").addEventListener("input",e=>{cur.notes=e.target.value;scheduleWrite()});
 let clearArmed=false;
 $("#clearBtn").addEventListener("click",()=>{
-  if(!clearArmed){clearArmed=true;$("#clearBtn").textContent="Tap again to clear";setTimeout(()=>{clearArmed=false;$("#clearBtn").textContent="Clear entries"},3000);return}
-  clearArmed=false;$("#clearBtn").textContent="Clear entries";delete draft[day];if(draft.notes)delete draft.notes[day];saveDraft();renderExercises();
+  if(!clearArmed){clearArmed=true;$("#clearBtn").textContent="Tap again to clear";setTimeout(()=>{clearArmed=false;$("#clearBtn").textContent="Clear this day"},3000);return}
+  clearArmed=false;$("#clearBtn").textContent="Clear this day";cur.sets={};cur.notes="";scheduleWrite();flushWrite();renderExercises();
 });
-function setUnit(u){unit=u;LS.set("il.unit",u);$("#u-lb").setAttribute("aria-pressed",String(u==="lb"));$("#u-kg").setAttribute("aria-pressed",String(u==="kg"));if(day)renderExercises()}
+function setUnit(u){unit=u;LS.set("il.unit",u);$("#u-lb").setAttribute("aria-pressed",String(u==="lb"));$("#u-kg").setAttribute("aria-pressed",String(u==="kg"));if(cur)renderExercises()}
 $("#u-lb").addEventListener("click",()=>setUnit("lb"));$("#u-kg").addEventListener("click",()=>setUnit("kg"));
 
-$("#saveBtn").addEventListener("click",async()=>{
-  const d=DAYS[day], out={};
-  let any=false;
-  for(const ex of d.ex){const arr=(draft[day]&&draft[day][ex.id])||[];
-    const sets=arr.filter(s=>s.r!=="").map(s=>({w:s.w===""?null:Number(s.w),r:Number(s.r),rir:s.rir===""?null:s.rir}));
-    if(sets.length){out[ex.id]=sets;any=true}}
-  if(!any){status("Enter reps for at least one set before saving.","err");return}
-  if(!db){status("Storage is blocked in this browser. Turn off Private Browsing in Safari.","err");return}
-  const b=blockWeek();
-  const today=isoDate(new Date()), prev=draft.saved&&draft.saved[day]&&draft.saved[day].date===today?draft.saved[day]:null;
-  const doc={kind:"lift",day,date:today,ts:prev?prev.ts:Date.now(),week:b.wk,block:b.block,unit,sets:out,notes:(draft.notes&&draft.notes[day])||""};
-  const btn=$("#saveBtn");btn.disabled=true;
+// ---------- Autosave ----------
+let pending=null, writeTimer=null, writing=false, noDbWarned=false;
+function saveState(s){const el=$("#saveState");if(!el)return;
+  el.textContent={idle:"Entries save automatically as you type.",saving:"Saving…",saved:"All changes saved.",err:"Couldn't save. Retrying…",nodb:"Not saving: open this on claude.ai while signed in."}[s]||"";
+  el.style.color=s==="err"||s==="nodb"?"var(--bad)":s==="saved"?"var(--good)":"var(--muted)"}
+function buildDoc(){
+  const sets={};let any=false;
+  for(const [id,arr] of Object.entries(cur.sets)){
+    // keep blank rows in front of a filled one so set numbers stay put
+    const last=arr.reduce((m,s,i)=>(s.w!==""||s.r!==""||s.rir!==""||s.done)?i:m,-1);
+    if(last>=0){sets[id]=arr.slice(0,last+1).map(s=>({w:s.w===""?null:Number(s.w),r:s.r===""?null:Number(s.r),rir:s.rir===""?null:s.rir,done:!!s.done}));any=true}
+  }
+  if(!cur.date)cur.date=isoDate(new Date());
+  if(!cur.ts)cur.ts=Date.now();
+  return {id:cur.id,empty:!any&&!cur.notes,body:{kind:"lift",day:cur.day,block:cur.block,week:cur.wk,date:cur.date,ts:cur.ts,unit,sets,notes:cur.notes||""},ref:cur};
+}
+function scheduleWrite(){
+  if(!db){if(!noDbWarned){noDbWarned=true}saveState("nodb");return}
+  pending=buildDoc();saveState("saving");clearTimeout(writeTimer);writeTimer=setTimeout(flushWrite,400);
+}
+async function flushWrite(){
+  clearTimeout(writeTimer);
+  if(!db||!pending)return;
+  if(writing){writeTimer=setTimeout(flushWrite,250);return}
+  const job=pending;pending=null;writing=true;
   try{
-    if(prev){await db.collection("sessions").doc(prev.id).set(doc)}
-    else{const ref=await db.collection("sessions").add(doc);draft.saved=draft.saved||{};draft.saved[day]={date:today,id:ref.id,ts:doc.ts}}
-    saveDraft();flushDraft();
-    status(prev?`Updated today's ${d.name}.`:`Saved ${d.name}. Up next: ${DAYS[ORDER[(ORDER.indexOf(day)+1)%4]].name}.`,"ok");
-    stopTimer();renderExercises();
-  }catch(e){status("Couldn't save to this phone. If Safari is in Private mode, switch it off; otherwise free some space.","err")}
-  finally{btn.disabled=false}
-});
+    const ref=db.collection("sessions").doc(job.id);
+    if(job.empty){if(job.ref.exists)await ref.delete();job.ref.exists=false}
+    else{await ref.set(job.body);job.ref.exists=true}
+    if(!pending&&job.ref===cur)saveState(job.empty?"idle":"saved");
+  }catch(e){
+    if(!pending)pending=job;saveState("err");writeTimer=setTimeout(flushWrite,3000);
+  }finally{writing=false}
+}
+document.addEventListener("visibilitychange",()=>{if(document.visibilityState==="hidden")flushWrite()});
+window.addEventListener("pagehide",()=>flushWrite());
 
 // ---------- Rest timer ----------
 let tEnd=0,tInt=null,beeped=false,actx=null;
@@ -597,8 +623,9 @@ function renderWeek(){
     if(s.kind==="cardio"){const lab={z2:"Zone 2",int:"4×4 intervals",walk:"Walk / sport"}[s.type]||"Cardio";
       return `<details><summary><span><strong>${esc(lab)}</strong> <span class="muted small">${fmtDate(s.date)}</span></span><span class="num">${s.minutes} min</span></summary><div class="body"><div><button class="linkbtn" data-del="${esc(s.id)}" style="color:var(--bad)">Delete this entry</button></div></div></details>`}
     const d=DAYS[s.day]||{name:s.day,plate:"blue",ex:[]};
-    const nsets=Object.values(s.sets||{}).reduce((a,x)=>a+x.length,0);
-    const lines=Object.entries(s.sets||{}).map(([id,arr])=>{const e=exById(id);return `<div><strong>${esc(e?e.ex.n:id)}</strong> <span class="mono small">${arr.map(x=>(x.w!=null?x.w+"×":"")+x.r+(x.rir!=null&&x.rir!==""?" @"+x.rir:"")).join(" · ")}</span></div>`}).join("");
+    const done=Object.fromEntries(Object.entries(s.sets||{}).map(([id,arr])=>[id,arr.filter(x=>x.r!=null&&x.r!=="")]).filter(([,a])=>a.length));
+    const nsets=Object.values(done).reduce((a,x)=>a+x.length,0);
+    const lines=Object.entries(done).map(([id,arr])=>{const e=exById(id);return `<div><strong>${esc(e?e.ex.n:id)}</strong> <span class="mono small">${arr.map(x=>(x.w!=null?x.w+"×":"")+x.r+(x.rir!=null&&x.rir!==""?" @"+x.rir:"")).join(" · ")}</span></div>`}).join("");
     return `<details><summary><span style="display:flex;gap:8px;align-items:center"><span class="plate p-${d.plate}"></span><strong>${esc(d.name)}</strong> <span class="muted small">${fmtDate(s.date)} · wk ${s.week||"?"}</span></span><span class="num small">${nsets} sets</span></summary>
       <div class="body">${lines}${s.notes?`<div class="muted">${esc(s.notes)}</div>`:""}<div class="small muted">Weights in ${esc(s.unit||"lb")}. Format: weight × reps @ RIR.</div><div><button class="linkbtn" data-del="${esc(s.id)}" style="color:var(--bad)">Delete this session</button></div></div></details>`}).join("");
 }
@@ -711,6 +738,15 @@ function renderGuide(){
    <li>Check with a doctor first if you have heart, blood pressure or joint conditions.</li></ul></div>`;
 }
 
+// Entries typed in the older version (before per-week autosave) move into this week's log once.
+function migrateDraft(){
+  const old=LS.get("il.draft",null);if(!old||!db)return;
+  const b=idxBW(currentIdx());
+  for(const k of ORDER){const dd=old[k];if(!dd||hasEntries(findSession(b.block,b.wk,k)))continue;
+    const sets={};for(const [id,arr] of Object.entries(dd)){if(Array.isArray(arr)&&arr.some(x=>x.r!==""))sets[id]=arr.map(x=>({w:x.w===""?null:Number(x.w),r:x.r===""?null:Number(x.r),rir:x.rir===""?null:x.rir,done:!!x.done}))}
+    if(Object.keys(sets).length)db.collection("sessions").doc(`b${b.block}w${b.wk}-${k}`).set({kind:"lift",day:k,block:b.block,week:b.wk,date:isoDate(new Date()),ts:Date.now(),unit,sets,notes:(old.notes&&old.notes[k])||""}).catch(()=>{})}
+  try{localStorage.removeItem("il.draft")}catch(e){}
+}
 // ---------- Local store (this phone) ----------
 function makeLocalDb(){
   const KS="il.sessions",KT="il.settings";
@@ -739,27 +775,26 @@ function makeLocalDb(){
   };
 }
 // ---------- Boot ----------
-function renderAll(){renderHeader();renderPhase();renderDayPick();renderExercises();if(tab==="week")renderWeek();if(tab==="progress")renderProgress()}
+function renderAll(){renderHeader();renderPhase();renderDayPick();if(tab==="week")renderWeek();if(tab==="progress")renderProgress()}
 day=LS.get("il.day",null)||"UA";
 setUnit(unit);
-renderPlan();renderGuide();renderAll();showTab(tab);
+renderPlan();renderGuide();openView();renderAll();showTab(tab);
 
 (async()=>{
   db=makeLocalDb();
   if(!db){dbReady=true;status("This browser is blocking storage, so nothing can be saved. Turn off Private Browsing in Safari.","err");renderAll();return}
-  try{const r=await db.doc("drafts/current").get();
-    if(r.exists){const v=r.data();if((v.ts||0)>(draft._ts||0)){draft=JSON.parse(v.json);LS.set("il.draft",draft);renderAll()}}}catch(e){}
   let gotSessions=false;
-  db.doc("settings/main").onSnapshot(snap=>{settings=snap.exists?snap.data():null;weekOverride=null;renderAll()},()=>{});
+  db.doc("settings/main").onSnapshot(snap=>{settings=snap.exists?snap.data():null;if(!pending&&!writing)openView();renderAll()},()=>{});
   db.collection("sessions").orderBy("ts","desc").limit(1000).onSnapshot(snap=>{
     sessions=snap.docs.map(d=>Object.assign({id:d.id},d.data()));dbReady=true;
-    const freshLoad=!gotSessions;gotSessions=true;
-    if(freshLoad){
-      // drop untouched prefills made before history arrived, so they refill from the last session
-      for(const k of ORDER){const dd=draft[k];if(!dd)continue;
-        for(const id of Object.keys(dd)){if(dd[id].every(s=>s.r===""&&s.rir===""&&!s.done))delete dd[id]}}
-      if(!LS.get("il.day",null)){const t=isoDate(new Date()),sv=draft.saved||{};
-        day=ORDER.find(k=>sv[k]&&sv[k].date===t)||(DAYS[draft.day]?draft.day:null)||nextDay()}
+    if(!gotSessions){gotSessions=true;migrateDraft();if(!LS.get("il.day",null))day=nextDay();openView()}
+    else{
+      // pick up changes made elsewhere, but never while typing here
+      const s=findSession(cur.block,cur.wk,cur.day),js=s?JSON.stringify(s):"";
+      const typing=document.activeElement&&$("#exlist").contains(document.activeElement);
+      if(js!==loadedJSON&&!pending&&!writing&&!typing&&s&&s.id===cur.id){openView()}
+      else if(s&&!cur.exists&&s.id===cur.id){cur.exists=true}
+      else{loadedJSON=js||loadedJSON}
     }
     renderAll();
   },err=>{dbReady=true;status("Lost the connection to your log. Reload the page to reconnect.","err");renderAll()});
