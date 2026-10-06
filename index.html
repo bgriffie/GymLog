@@ -189,6 +189,7 @@ td.num,th.num{text-align:right;white-space:nowrap}
       <label class="label" for="notes">Session notes</label>
       <input id="notes" type="text" placeholder="Sleep, energy, anything that felt off">
     </div>
+    <p class="notice ok small" id="savedNote" hidden>Saved to your log today. Your numbers stay here until tomorrow, and any changes you make update the same entry when you tap Update.</p>
     <div class="actions">
       <button class="btn" id="saveBtn">Save workout</button>
       <button class="btn ghost" id="clearBtn">Clear entries</button>
@@ -323,7 +324,18 @@ let db=null, sessions=[], settings=null, dbReady=false;
 let unit=LS.get("il.unit","lb");
 let weekOverride=null;
 let day=null;
-let draft=LS.get("il.draft",{});   // {UA:{bench:[{w,r,rir,done}]}, notes}
+let draft=LS.get("il.draft",{});   // {UA:{bench:[{w,r,rir,done}]}, notes, saved:{UA:{date,id}}, _ts}
+// In-progress entries: written to this device on every keystroke and mirrored to the log store,
+// so they survive closing the app even where browser storage is cleared.
+let draftTimer=null,draftWriting=false,draftDirty=false;
+function saveDraft(){draft._ts=Date.now();LS.set("il.draft",draft);draftDirty=true;clearTimeout(draftTimer);draftTimer=setTimeout(flushDraft,600)}
+async function flushDraft(){clearTimeout(draftTimer);if(!db||!draftDirty)return;
+  if(draftWriting){draftTimer=setTimeout(flushDraft,400);return}
+  draftWriting=true;draftDirty=false;
+  try{await db.doc("drafts/current").set({json:JSON.stringify(draft),ts:draft._ts||Date.now()})}catch(e){draftDirty=true}
+  finally{draftWriting=false}}
+document.addEventListener("visibilitychange",()=>{if(document.visibilityState==="hidden")flushDraft()});
+window.addEventListener("pagehide",()=>flushDraft());
 let tab=LS.get("il.tab","today");
 
 function blockWeek(){
@@ -335,7 +347,7 @@ function blockWeek(){
 }
 function lifts(){return sessions.filter(s=>s.kind==="lift")}
 function lastFor(dayKey){return lifts().find(s=>s.day===dayKey)}
-function lastExercise(id){for(const s of lifts()){if(s.sets&&s.sets[id]&&s.sets[id].length)return {s,sets:s.sets[id]}}return null}
+function lastExercise(id){const today=isoDate(new Date());for(const s of lifts()){if(s.date===today)continue;if(s.sets&&s.sets[id]&&s.sets[id].length)return {s,sets:s.sets[id]}}return null}
 function nextDay(){const l=lifts()[0];if(!l)return "UA";return ORDER[(ORDER.indexOf(l.day)+1)%4]}
 
 // ---------- Status ----------
@@ -464,7 +476,7 @@ function renderDayPick(){
   const nd=nextDay();
   $("#daypick").innerHTML=ORDER.map(k=>{const d=DAYS[k],l=lastFor(k);
     return `<button data-day="${k}" aria-pressed="${k===day}"><span class="dn"><span class="plate p-${d.plate}"></span>${d.name}</span><span class="ds">${l?"Last: "+fmtDate(l.date):d.sub}</span>${k===nd?'<span class="next">Up next</span>':'<span class="next" style="visibility:hidden">·</span>'}</button>`}).join("");
-  document.querySelectorAll("#daypick button").forEach(b=>b.addEventListener("click",()=>{day=b.dataset.day;LS.set("il.day",day);renderDayPick();renderExercises()}));
+  document.querySelectorAll("#daypick button").forEach(b=>b.addEventListener("click",()=>{day=b.dataset.day;LS.set("il.day",day);draft.day=day;saveDraft();renderDayPick();renderExercises()}));
 }
 function getDraftSets(ex,count){
   draft[day]=draft[day]||{}; let arr=draft[day][ex.id];
@@ -486,7 +498,12 @@ function hintFor(ex){
   return {cls:"",txt:`Last time: ${line} ${u}. Beat it by a rep or two at the same weight.`};
 }
 function renderExercises(){
-  const wk=blockWeek().wk, d=DAYS[day];
+  const wk=blockWeek().wk, d=DAYS[day], today=isoDate(new Date());
+  const sv=draft.saved&&draft.saved[day];
+  if(sv&&sv.date!==today){delete draft[day];if(draft.notes)delete draft.notes[day];delete draft.saved[day];saveDraft()}
+  const savedToday=!!(draft.saved&&draft.saved[day]);
+  $("#saveBtn").textContent=savedToday?"Update workout":"Save workout";
+  $("#savedNote").hidden=!savedToday;
   $("#exlist").innerHTML=d.ex.map((ex,i)=>{
     const t=target(ex,wk), n=t.sets+t.bonus, arr=getDraftSets(ex,n), h=hintFor(ex);
     const repLabel=ex.secs?"Secs":"Reps";
@@ -508,20 +525,20 @@ function renderExercises(){
 }
 $("#exlist").addEventListener("input",e=>{
   const inp=e.target; const row=inp.closest(".setrow"); if(!row||!inp.dataset.f)return;
-  draft[day][row.dataset.ex][+row.dataset.i][inp.dataset.f]=inp.value.trim(); LS.set("il.draft",draft);
+  draft[day][row.dataset.ex][+row.dataset.i][inp.dataset.f]=inp.value.trim(); saveDraft();
 });
 $("#exlist").addEventListener("click",e=>{
   const doneBtn=e.target.closest("[data-done]");
-  if(doneBtn){const row=doneBtn.closest(".setrow");const s=draft[day][row.dataset.ex][+row.dataset.i];s.done=!s.done;doneBtn.setAttribute("aria-pressed",String(s.done));LS.set("il.draft",draft);
+  if(doneBtn){const row=doneBtn.closest(".setrow");const s=draft[day][row.dataset.ex][+row.dataset.i];s.done=!s.done;doneBtn.setAttribute("aria-pressed",String(s.done));saveDraft();
     if(s.done){const ex=exById(row.dataset.ex).ex;startTimer(ex.rest,ex.n)}return}
-  const add=e.target.closest("[data-add]"); if(add){draft[day][add.dataset.add].push({w:"",r:"",rir:"",done:false});const a=draft[day][add.dataset.add];if(a.length>1)a[a.length-1].w=a[a.length-2].w;LS.set("il.draft",draft);renderExercises();return}
-  const rm=e.target.closest("[data-rm]"); if(rm){draft[day][rm.dataset.rm].pop();LS.set("il.draft",draft);renderExercises()}
+  const add=e.target.closest("[data-add]"); if(add){draft[day][add.dataset.add].push({w:"",r:"",rir:"",done:false});const a=draft[day][add.dataset.add];if(a.length>1)a[a.length-1].w=a[a.length-2].w;saveDraft();renderExercises();return}
+  const rm=e.target.closest("[data-rm]"); if(rm){draft[day][rm.dataset.rm].pop();saveDraft();renderExercises()}
 });
-$("#notes").addEventListener("input",e=>{draft.notes=draft.notes||{};draft.notes[day]=e.target.value;LS.set("il.draft",draft)});
+$("#notes").addEventListener("input",e=>{draft.notes=draft.notes||{};draft.notes[day]=e.target.value;saveDraft()});
 let clearArmed=false;
 $("#clearBtn").addEventListener("click",()=>{
   if(!clearArmed){clearArmed=true;$("#clearBtn").textContent="Tap again to clear";setTimeout(()=>{clearArmed=false;$("#clearBtn").textContent="Clear entries"},3000);return}
-  clearArmed=false;$("#clearBtn").textContent="Clear entries";delete draft[day];if(draft.notes)delete draft.notes[day];LS.set("il.draft",draft);renderExercises();
+  clearArmed=false;$("#clearBtn").textContent="Clear entries";delete draft[day];if(draft.notes)delete draft.notes[day];saveDraft();renderExercises();
 });
 function setUnit(u){unit=u;LS.set("il.unit",u);$("#u-lb").setAttribute("aria-pressed",String(u==="lb"));$("#u-kg").setAttribute("aria-pressed",String(u==="kg"));if(day)renderExercises()}
 $("#u-lb").addEventListener("click",()=>setUnit("lb"));$("#u-kg").addEventListener("click",()=>setUnit("kg"));
@@ -535,12 +552,15 @@ $("#saveBtn").addEventListener("click",async()=>{
   if(!any){status("Enter reps for at least one set before saving.","err");return}
   if(!db){status("Storage is blocked in this browser. Turn off Private Browsing in Safari.","err");return}
   const b=blockWeek();
-  const doc={kind:"lift",day,date:isoDate(new Date()),ts:Date.now(),week:b.wk,block:b.block,unit,sets:out,notes:(draft.notes&&draft.notes[day])||""};
+  const today=isoDate(new Date()), prev=draft.saved&&draft.saved[day]&&draft.saved[day].date===today?draft.saved[day]:null;
+  const doc={kind:"lift",day,date:today,ts:prev?prev.ts:Date.now(),week:b.wk,block:b.block,unit,sets:out,notes:(draft.notes&&draft.notes[day])||""};
   const btn=$("#saveBtn");btn.disabled=true;
-  try{await db.collection("sessions").add(doc);
-    delete draft[day];if(draft.notes)delete draft.notes[day];LS.set("il.draft",draft);
-    status(`Saved ${d.name}. Up next: ${DAYS[ORDER[(ORDER.indexOf(day)+1)%4]].name}.`,"ok");
-    stopTimer();
+  try{
+    if(prev){await db.collection("sessions").doc(prev.id).set(doc)}
+    else{const ref=await db.collection("sessions").add(doc);draft.saved=draft.saved||{};draft.saved[day]={date:today,id:ref.id,ts:doc.ts}}
+    saveDraft();flushDraft();
+    status(prev?`Updated today's ${d.name}.`:`Saved ${d.name}. Up next: ${DAYS[ORDER[(ORDER.indexOf(day)+1)%4]].name}.`,"ok");
+    stopTimer();renderExercises();
   }catch(e){status("Couldn't save to this phone. If Safari is in Private mode, switch it off; otherwise free some space.","err")}
   finally{btn.disabled=false}
 });
@@ -704,12 +724,13 @@ function makeLocalDb(){
   const newId=()=>Date.now().toString(36)+Math.random().toString(36).slice(2,8);
   const coll={
     add:async d=>{const id=newId();save(ss.concat([Object.assign({},d,{id})]),st);return {id}},
-    doc:id=>({delete:async()=>save(ss.filter(x=>x.id!==id),st)}),
+    doc:id=>({delete:async()=>save(ss.filter(x=>x.id!==id),st),set:async d=>save(ss.filter(x=>x.id!==id).concat([Object.assign({},d,{id})]),st)}),
     orderBy(){return coll},limit(){return coll},
     onSnapshot(f){sub.s.push(f);f(snapS());return()=>{}}
   };
   return {
-    doc:()=>({set:async v=>save(ss,v),onSnapshot(f){sub.t.push(f);f(snapT());return()=>{}}}),
+    // drafts already live in this phone's storage, so only settings need a document here
+    doc:p=>p==="settings/main"?{set:async v=>save(ss,v),get:async()=>snapT(),onSnapshot(f){sub.t.push(f);f(snapT());return()=>{}}}:{get:async()=>({exists:false}),set:async()=>{}},
     collection:()=>coll,
     exportAll:()=>({app:"iron-log",version:1,exported:new Date().toISOString(),settings:st,sessions:ss}),
     importAll(obj){if(!obj||!Array.isArray(obj.sessions))throw new Error("bad");
@@ -726,6 +747,8 @@ renderPlan();renderGuide();renderAll();showTab(tab);
 (async()=>{
   db=makeLocalDb();
   if(!db){dbReady=true;status("This browser is blocking storage, so nothing can be saved. Turn off Private Browsing in Safari.","err");renderAll();return}
+  try{const r=await db.doc("drafts/current").get();
+    if(r.exists){const v=r.data();if((v.ts||0)>(draft._ts||0)){draft=JSON.parse(v.json);LS.set("il.draft",draft);renderAll()}}}catch(e){}
   let gotSessions=false;
   db.doc("settings/main").onSnapshot(snap=>{settings=snap.exists?snap.data():null;weekOverride=null;renderAll()},()=>{});
   db.collection("sessions").orderBy("ts","desc").limit(1000).onSnapshot(snap=>{
@@ -735,7 +758,8 @@ renderPlan();renderGuide();renderAll();showTab(tab);
       // drop untouched prefills made before history arrived, so they refill from the last session
       for(const k of ORDER){const dd=draft[k];if(!dd)continue;
         for(const id of Object.keys(dd)){if(dd[id].every(s=>s.r===""&&s.rir===""&&!s.done))delete dd[id]}}
-      if(!LS.get("il.day",null))day=nextDay();
+      if(!LS.get("il.day",null)){const t=isoDate(new Date()),sv=draft.saved||{};
+        day=ORDER.find(k=>sv[k]&&sv[k].date===t)||(DAYS[draft.day]?draft.day:null)||nextDay()}
     }
     renderAll();
   },err=>{dbReady=true;status("Lost the connection to your log. Reload the page to reconnect.","err");renderAll()});
