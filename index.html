@@ -4,13 +4,13 @@
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-title" content="Iron Log">
+<meta name="apple-mobile-web-app-title" content="Workout Log">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="theme-color" content="#121614">
 <meta name="color-scheme" content="dark">
 <link rel="apple-touch-icon" href="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAALQAAAC0CAIAAACyr5FlAAAD+0lEQVR4nOzdz2scZRyA8XdndhfdpNZINFAQxbMgWCuKghZy9KQeREQPleI/4cmD+h+EYA9exIPePNh7L/0JhV5KS2lpL4XStGHTw87OpHsqpc3TzjZ9Z+ZNn89hWbLfw8ubJ5nZCZntLx9YCdJO+kECxiFkHELGIWQcQsYhZBxCxiFkHELGIWQcQsYhZBxCxiFkHELGIWQcQsYhZBxCxiFkHELGIWQcQsYhZBxCxiFkHELGIWQcQsYhZBxCxiFkHELGIWQcQsYhZBxCxiFkHELGIWQcQsYhZBxCxiFkHELGIWQcQsYhZBxC7cTx4XDw1cLorTxfzLMdB8Zlda0s/926d2pShL2r4/uQj/YthmZ9NBz8vLT/jTwfZj2amb00G/js5ZeuFMWNsgp7Uff3IQuN+3phFGk4Ld3fhxYOK2/280jDaen+PrQQx0I2x6+ruYbT0v198N2KkHEIGYeQcQgZh5BxCBmHUDJx9AavDN7+Jl96Nxvuf+SlanK33LhQXP17u9gMbUtlnXUkE8fgnW8Hr3+840uzb0O28knIssnFtdC2VNZZRzLXH/uvvrfLgWakss46EjqsjHY50IxU1lmHJ6RCxiFkHELGIWQcQsYhZBxCxiFkHELGIWQcQsYhZBxCxiFkHELGIWQcQsYhFDGO15aWjvx45P2DB2dPHv568f13YR7Hj/8/e/zyl5s1J9tVf53Ptg8P3N7YOHf27LE/js2ehDgixnH0p6OHPz8cFMfsR251dTXv57/9+nuII2Ichz44FBRZ1E2OGMfiYtN3G3sBRd1kT0iFjEPIOISMQ8g4hCL+I/V4PA6KLOomR4zj9JnTQZFF3eSIh5X1tfVyWj5++VzPxYPL5yGa3vKBldCs/1aW55r/4uat2ePCp38+dXLrxA+hbfXX+Wz70CRPSIWMQ8g4hIxDyDiEjEPIOISMQ8g4hIxDyDiEjEPIOISMQ8g4hIxDyDiEjEMomY/x2i7u7XKgGamss45k4pjeOb/LgWakss46kjmsFFf+ClX15I/kDB2QyjrrSCaO7WJzcmk9dF4q66zDE1Ih4xAyDiHjEDIOIeMQMg6hFq6QblVVpOG0dH8fWojj+rSMNJyW7u9DC3H8szXHX57mGk5L9/chH+1r+j7DN8rqclEs5/ko9IZZb8eZcVldmk7XNscnJ0XYo7q/Dy3c2Uep8N2KkHEIGYeQcQgZh5BxCBmHkHEIGYeQcQgZh5BxCBmHkHEIGYeQcQgZh5BxCBmHkHEIGYeQcQgZh5BxCBmHkHEIGYeQcQgZh5BxCBmHkHEIGYeQcQgZh5BxCBmHkHEIGYeQcQgZh5BxCBmHkHEIGYeQcQgZh5BxCBmH0H0AAAD//z2PWBgAAAAGSURBVAMADVsQuzKQCrcAAAAASUVORK5CYII=">
 <link rel="icon" href="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAALQAAAC0CAIAAACyr5FlAAAD+0lEQVR4nOzdz2scZRyA8XdndhfdpNZINFAQxbMgWCuKghZy9KQeREQPleI/4cmD+h+EYA9exIPePNh7L/0JhV5KS2lpL4XStGHTw87OpHsqpc3TzjZ9Z+ZNn89hWbLfw8ubJ5nZCZntLx9YCdJO+kECxiFkHELGIWQcQsYhZBxCxiFkHELGIWQcQsYhZBxCxiFkHELGIWQcQsYhZBxCxiFkHELGIWQcQsYhZBxCxiFkHELGIWQcQsYhZBxCxiFkHELGIWQcQsYhZBxCxiFkHELGIWQcQsYhZBxCxiFkHELGIWQcQsYhZBxC7cTx4XDw1cLorTxfzLMdB8Zlda0s/926d2pShL2r4/uQj/YthmZ9NBz8vLT/jTwfZj2amb00G/js5ZeuFMWNsgp7Uff3IQuN+3phFGk4Ld3fhxYOK2/280jDaen+PrQQx0I2x6+ruYbT0v198N2KkHEIGYeQcQgZh5BxCBmHUDJx9AavDN7+Jl96Nxvuf+SlanK33LhQXP17u9gMbUtlnXUkE8fgnW8Hr3+840uzb0O28knIssnFtdC2VNZZRzLXH/uvvrfLgWakss46EjqsjHY50IxU1lmHJ6RCxiFkHELGIWQcQsYhZBxCxiFkHELGIWQcQsYhZBxCxiFkHELGIWQcQsYhFDGO15aWjvx45P2DB2dPHv568f13YR7Hj/8/e/zyl5s1J9tVf53Ptg8P3N7YOHf27LE/js2ehDgixnH0p6OHPz8cFMfsR251dTXv57/9+nuII2Ichz44FBRZ1E2OGMfiYtN3G3sBRd1kT0iFjEPIOISMQ8g4hCL+I/V4PA6KLOomR4zj9JnTQZFF3eSIh5X1tfVyWj5++VzPxYPL5yGa3vKBldCs/1aW55r/4uat2ePCp38+dXLrxA+hbfXX+Wz70CRPSIWMQ8g4hIxDyDiEjEPIOISMQ8g4hIxDyDiEjEPIOISMQ8g4hIxDyDiEjEMomY/x2i7u7XKgGamss45k4pjeOb/LgWakss46kjmsFFf+ClX15I/kDB2QyjrrSCaO7WJzcmk9dF4q66zDE1Ih4xAyDiHjEDIOIeMQMg6hFq6QblVVpOG0dH8fWojj+rSMNJyW7u9DC3H8szXHX57mGk5L9/chH+1r+j7DN8rqclEs5/ko9IZZb8eZcVldmk7XNscnJ0XYo7q/Dy3c2Uep8N2KkHEIGYeQcQgZh5BxCBmHkHEIGYeQcQgZh5BxCBmHkHEIGYeQcQgZh5BxCBmHkHEIGYeQcQgZh5BxCBmHkHEIGYeQcQgZh5BxCBmHkHEIGYeQcQgZh5BxCBmHkHEIGYeQcQgZh5BxCBmHkHEIGYeQcQgZh5BxCBmH0H0AAAD//z2PWBgAAAAGSURBVAMADVsQuzKQCrcAAAAASUVORK5CYII=">
-<title>Iron Log</title>
+<title>Workout Log</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700;800&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;600&display=swap">
@@ -30,7 +30,6 @@
   --r:6px;
 }
 *{box-sizing:border-box}
-html{padding-top:env(safe-area-inset-top,0px)}
 body{margin:0}
 input,select{font-size:16px}
 [hidden]{display:none!important}
@@ -51,6 +50,15 @@ button{cursor:pointer}
 
 header.top{position:sticky;top:env(safe-area-inset-top,0px);z-index:5;background:var(--bg);margin-inline:-16px;padding:14px 16px 0;border-bottom:1px solid var(--line)}
 .top-inner{max-width:760px;margin:0 auto;display:grid;gap:10px}
+/* header condenses once the page scrolls */
+header.top.compact{padding-top:6px}
+header.top.compact .top-inner{gap:2px}
+header.top.compact .eyebrow,header.top.compact .week .label{display:none}
+header.top.compact h1{font-size:20px}
+header.top.compact .week .wk{font-size:17px}
+header.top.compact .iconbtn{width:28px;height:28px}
+header.top.compact .tabs button{padding:4px 10px 6px;font-size:15px}
+header.top.compact .top-row{align-items:center}
 .top-row{display:flex;justify-content:space-between;align-items:flex-end;gap:12px;flex-wrap:wrap}
 .week{display:flex;align-items:center;gap:8px}
 .week .wk{font-family:var(--f-display);font-size:22px;font-weight:700}
@@ -152,6 +160,9 @@ td.num,th.num{text-align:right;white-space:nowrap}
 .timer button{border-color:var(--line);color:var(--ink)}
 .timer .t{color:var(--accent)}
 .unit-toggle button[aria-pressed="true"]{background:var(--accent);color:var(--accent-ink)}
+/* the header itself covers the status-bar area, so nothing scrolls visibly behind it */
+header.top{top:0;padding-top:calc(14px + env(safe-area-inset-top,0px))}
+header.top.compact{padding-top:calc(6px + env(safe-area-inset-top,0px))}
 </style>
 </head><body>
 
@@ -159,8 +170,8 @@ td.num,th.num{text-align:right;white-space:nowrap}
   <div class="top-inner">
     <div class="top-row">
       <div>
-        <div class="label">Upper / Lower · 4 days</div>
-        <h1>Iron Log</h1>
+        <div class="label eyebrow">Upper / Lower · 4 days</div>
+        <h1>Workout Log</h1>
       </div>
       <div class="week" aria-label="Training week">
         <button class="iconbtn" id="wkPrev" aria-label="Previous week">‹</button>
@@ -648,7 +659,7 @@ function renderBackupInfo(){const el=$("#bkInfo");if(!el)return;const last=LS.ge
   el.textContent=sessions.length+(sessions.length===1?" entry":" entries")+" on this phone."+(last?" Last export: "+fmtDate(last)+".":" Not exported yet.")}
 $("#expBtn").addEventListener("click",async()=>{
   if(!db||!db.exportAll)return;
-  const json=JSON.stringify(db.exportAll(),null,1), name="iron-log-backup-"+isoDate(new Date())+".json";
+  const json=JSON.stringify(db.exportAll(),null,1), name="workout-log-backup-"+isoDate(new Date())+".json";
   const file=new File([json],name,{type:"application/json"});
   try{
     if(navigator.canShare&&navigator.canShare({files:[file]})){await navigator.share({files:[file],title:name})}
@@ -660,7 +671,7 @@ $("#impBtn").addEventListener("click",()=>$("#impFile").click());
 $("#impFile").addEventListener("change",async e=>{
   const f=e.target.files&&e.target.files[0];e.target.value="";if(!f||!db)return;
   try{const n=db.importAll(JSON.parse(await f.text()));status(n?`Imported ${n} entr${n===1?"y":"ies"}.`:"Nothing new in that backup; everything was already here.","ok")}
-  catch(err){status("That file isn't an Iron Log backup. Pick a file named iron-log-backup-….json.","err")}
+  catch(err){status("That file isn't a Workout Log backup. Pick a file named workout-log-backup-….json.","err")}
 });
 
 // ---------- Progress ----------
@@ -747,6 +758,12 @@ function migrateDraft(){
     if(Object.keys(sets).length)db.collection("sessions").doc(`b${b.block}w${b.wk}-${k}`).set({kind:"lift",day:k,block:b.block,week:b.wk,date:isoDate(new Date()),ts:Date.now(),unit,sets,notes:(old.notes&&old.notes[k])||""}).catch(()=>{})}
   try{localStorage.removeItem("il.draft")}catch(e){}
 }
+// ---------- Header condenses on scroll ----------
+(()=>{const h=document.querySelector("header.top");let compact=false,raf=0;
+  const check=()=>{raf=0;const y=window.scrollY||document.documentElement.scrollTop;
+    if(!compact&&y>60){compact=true;h.classList.add("compact")}else if(compact&&y<15){compact=false;h.classList.remove("compact")}};
+  window.addEventListener("scroll",()=>{if(!raf)raf=requestAnimationFrame(check)},{passive:true});check()})();
+
 // ---------- Local store (this phone) ----------
 function makeLocalDb(){
   const KS="il.sessions",KT="il.settings";
