@@ -1,6 +1,6 @@
 /* Workout Log service worker: caches the app shell so it runs offline.
    Bump CACHE whenever any file changes so installed apps pick up the update. */
-const CACHE = 'gymlog-v2.0';
+const CACHE = 'gymlog-v2.1';
 const ASSETS = ['./', './index.html', './manifest.json', './apple-touch-icon.png', './icon-192.png', './icon-512.png'];
 
 self.addEventListener('install', e => {
